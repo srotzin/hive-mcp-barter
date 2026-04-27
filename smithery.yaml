@@ -1,0 +1,106 @@
+# Smithery Registry — hive-mcp-barter
+# https://smithery.ai
+
+startCommand:
+  type: http
+  configSchema:
+    type: object
+    properties: {}
+    required: []
+  url: https://hive-mcp-barter.onrender.com/mcp
+
+name: hive-mcp-barter
+displayName: hive-mcp-barter — Outbound 402 arbitrage agent
+version: "1.0.0"
+description: >
+  Outbound 402 arbitrage agent. Probes 402-enabled MCP endpoints, counter-offers
+  below asking, and settles when the spread clears our resale floor. MCP
+  2024-11-05, USDC on Base L2, single-shot no-haggle policy. Real rails.
+
+author:
+  name: Steve Rotzin
+  email: steve@thehiveryiq.com
+  url: https://www.thehiveryiq.com
+
+license: MIT
+homepage: https://github.com/srotzin/hive-mcp-barter
+repository:
+  type: git
+  url: https://github.com/srotzin/hive-mcp-barter
+
+transport: streamable-http
+endpoint: https://hive-mcp-barter.onrender.com/mcp
+protocol: "2024-11-05"
+
+categories:
+  - finance
+  - agent-to-agent
+  - arbitrage
+  - web3
+  - defi
+
+tags:
+  - mcp
+  - hive
+  - barter
+  - x402
+  - 402
+  - arbitrage
+  - ai-agents
+  - a2a
+  - usdc
+  - base-l2
+
+tools:
+  - name: barter_discover
+    description: >
+      List 402-enabled MCP endpoints from a public registry (glama, smithery,
+      mcp.so) with last-seen asking prices. Tier 0, free, read-only.
+    inputs:
+      - name: registry
+        type: string
+        required: false
+        description: "'glama', 'smithery', or 'mcp.so'"
+      - name: limit
+        type: integer
+        required: false
+        description: "Max endpoints to return (default 50)"
+  - name: barter_quote_curve
+    description: >
+      Build a demand curve for a target by sending up to 5 probes at
+      descending floor pcts. Returns the reservation-price estimate. Tier 0.
+    inputs:
+      - name: target_url
+        type: string
+        required: true
+        description: "HTTPS endpoint that speaks 402 quote envelopes"
+      - name: n_probes
+        type: integer
+        required: false
+        description: "Number of probes (default 3)"
+  - name: barter_arbitrage_book
+    description: >
+      Today's P&L: probes sent, counters accepted, USDC realized spread.
+      Tier 0, free, read-only.
+    inputs: []
+
+runtime:
+  type: node
+  version: ">=18"
+  command: node server.js
+  env:
+    - name: PORT
+      default: "3000"
+      required: false
+    - name: ENABLE_OUTBOUND
+      default: "false"
+      required: false
+    - name: WALLET_ADDRESS
+      default: "0x15184bf50b3d3f52b60434f8942b7d52f2eb436e"
+      required: false
+    - name: USDC_BASE
+      default: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+      required: false
+    - name: HIVECOMPUTE_URL
+      default: "https://hivecompute-g2g7.onrender.com/v1/compute/chat/completions"
+      required: false
