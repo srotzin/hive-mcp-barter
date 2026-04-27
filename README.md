@@ -37,6 +37,7 @@ Probes 402-enabled MCP endpoints, counter-offers below asking, and settles when 
 | `POST` | `/v1/barter/settle` | Resolve an accepted counter on-chain and book the spread. |
 | `GET` | `/v1/barter/ledger` | Running P&L, attempts, wins, spread. |
 | `GET` | `/v1/barter/today` | Today aggregate (Tier 0, free). |
+| `GET` | `/v1/barter/capabilities` | Aggregated discovered capabilities — what targets advertise in `accepts[]`, with min/max/p50 asking and target counts. |
 | `GET` | `/health` | Service health. |
 
 ## Counter-offer envelope
@@ -63,14 +64,19 @@ The pre-signed transaction is the entire commitment. The target accepts by broad
 
 ## Resale floor
 
-| Category | Our buy floor | Our resell |
-|---|---|---|
-| LLM tokens | $0.000020 / token | $0.000040 / token |
-| Oracle reads | $0.0008 / read | $0.0015 / read |
-| Storage writes | $0.00012 / write | $0.00025 / write |
-| KYC checks | $0.04 / check | $0.08 / check |
+| Category | Cost / unit | Resale / unit | Verified | Source |
+|---|---|---|---|---|
+| `llm_tokens` | $0.000020 / token | $0.000040 / token | ✅ | hivecompute metered both sides |
+| `standard_402` | — | — | ✅ | passes through hivemorph 402 envelope at advertised asking |
+| `oracle_reads` | $0.0008 / read | $0.0015 / read | ❌ | estimate, awaiting probe data |
+| `storage_writes` | $0.00012 / write | $0.00025 / write | ❌ | estimate, awaiting probe data |
+| `kyc_checks` | $0.04 / check | $0.08 / check | ❌ | estimate, awaiting probe data |
 
-If `target_asking × counter_pct ≤ our_resell × 0.95`, we counter. Otherwise we skip — there is no margin.
+The margin gate `target_asking × counter_pct ≤ our_resale × 0.95` only fires for `verified: true` rows. **Unverified categories are probed and recorded but never countered** — until two-sided demand is observed, the resale number is a placeholder, not a floor.
+
+## Price discovery is the product
+
+The 402 envelopes targets return on probe are the signal. Every probe with a parseable `accepts[]` is appended to the `discovered_capabilities` table; `GET /v1/barter/capabilities` aggregates that into `(capability, times_observed, target_count, asking_usd_min/max/p50)`. After ~30 days of probe-only operation this answers "what do agents actually pay for in our network." Counter-offers on verified categories are downstream of this — the data collection comes first.
 
 ## Risk controls
 
@@ -89,15 +95,30 @@ All caps fail-closed. Configurable via env vars; missing or invalid env always f
 | Env | Required | Default | Notes |
 |---|---|---|---|
 | `PORT` | no | `3000` | |
-| `ENABLE_OUTBOUND` | no | `false` | Default-off. The 5-min cron loop only runs when set to `true`. |
+| `ENABLE_OUTBOUND` | no | `false` | **Master kill-switch.** Default-off. The 5-min cron loop only runs when set to `true`. If `false`, `BARTER_MODE` has no effect — the loop is inert. |
+| `BARTER_MODE` | no | `probe-only` | One of `probe-only`, `counter`, `full`. See matrix below. |
 | `WALLET_ADDRESS` | no | `0x15184…436e` | W1 MONROE on Base. |
 | `USDC_BASE` | no | `0x833589…2913` | USDC contract on Base. |
 | `BASE_RPC` | no | `https://mainnet.base.org` | |
 | `HIVECOMPUTE_URL` | no | `https://hivecompute-g2g7.onrender.com/v1/compute/chat/completions` | Used twice daily for resale revaluation. |
+| `AUCTION_HOOK_URL` | no | `https://hive-mcp-auction.onrender.com/v1/auction/calibrate` | Where to POST `below_floor` calibration pings. Fail-silent if unreachable. |
+| `AUCTION_HMAC_KEY` | no | — | If set, calibration pings carry an `X-Hive-Signature: sha256=…` HMAC. Otherwise unauthenticated; auction service is expected to validate or drop. |
 | `MAX_DAILY_SPEND_USD` | no | `25` | |
 | `MAX_SINGLE_COUNTER_USD` | no | `0.50` | |
 | `COUNTER_PCT` | no | `0.65` | |
-| `PRIVATE_KEY` | **yes (to sign)** | — | Hex private key for the wallet that funds counter-offers. **Never commit this.** Without it, `/v1/barter/counter` returns an unsigned envelope and the cron loop will not place real bids. |
+| `PRIVATE_KEY` | **yes (to sign)** | — | Hex private key for the wallet that funds counter-offers. **Never commit this.** Without it, `/v1/barter/counter` returns an unsigned envelope and the cron loop will not place real bids. Not required for `probe-only`. |
+
+### `BARTER_MODE` matrix
+
+`ENABLE_OUTBOUND=true` is required for any of these to do anything from the cron loop. Manual REST calls to `/v1/barter/counter` and `/v1/barter/settle` are gated by `BARTER_MODE` regardless of `ENABLE_OUTBOUND`.
+
+| Mode | Discovery | Probes | Build counter envelope | Auto-settle |
+|---|---|---|---|---|
+| `probe-only` (default) | yes | yes | **no** (REST returns 403 `mode_blocks_counter`) | **no** (REST returns 403 `mode_blocks_settle`) |
+| `counter` | yes | yes | yes | **no** — settlement requires manual `/v1/barter/settle` call |
+| `full` | yes | yes | yes (only on `verified: true` resale rows) | yes — original v1.0.0 behavior |
+
+Default `probe-only` makes the service a pure data-collection rail: probes are sent, `accepts[]` are recorded into `discovered_capabilities`, calibration pings are emitted, but no counter envelope is ever built and no on-chain action is ever taken. Promote to `counter` once enough probes exist to validate the resale floors; promote to `full` only after a hand-counted settlement run confirms the spread.
 
 > Signing is opt-in. The repo does not include a key. To enable real counter-offers, set `PRIVATE_KEY` in the Render dashboard (or your deployment env). To enable the 5-min cron loop, set `ENABLE_OUTBOUND=true`.
 

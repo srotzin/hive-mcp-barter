@@ -19,9 +19,10 @@ import { awaitReceipt, expectedTxHash } from './lib/settle.js';
 import {
   openDb, recordCounter, recordSettlement, blacklistTarget, isBlacklisted,
   probedInLast24h, distinctTargetsLastHour, todaySpentUsd, todayBook, recentTargets,
+  aggregatedCapabilities,
 } from './lib/ledger.js';
 import { CAPS, checkCounter, checkProbeAllowed } from './lib/caps.js';
-import { RESALE_TABLE, classifyAsk, resaleValueFor } from './lib/valuation.js';
+import { RESALE_TABLE, classifyAsk, resaleValueFor, isVerified } from './lib/valuation.js';
 
 const app = express();
 app.use(express.json({ limit: '256kb' }));
@@ -30,6 +31,17 @@ const PORT = process.env.PORT || 3000;
 const ENABLE_OUTBOUND = String(process.env.ENABLE_OUTBOUND || 'false').toLowerCase() === 'true';
 const HIVECOMPUTE_URL = process.env.HIVECOMPUTE_URL || 'https://hivecompute-g2g7.onrender.com/v1/compute/chat/completions';
 const WALLET_ADDRESS = process.env.WALLET_ADDRESS || '0x15184bf50b3d3f52b60434f8942b7d52f2eb436e';
+
+// ─── BARTER_MODE ───────────────────────────────────────────────────────────
+// Three modes layered on top of ENABLE_OUTBOUND:
+//   probe-only (default): discovery + probes, NEVER counter, NEVER settle
+//   counter             : discovery + probes + counter envelopes, no auto-settle
+//   full                : original behavior — auto-counter + auto-settle on accept
+// ENABLE_OUTBOUND remains a master kill-switch — if false, even probe-only
+// is inert (the 5-min cron loop does nothing).
+const VALID_BARTER_MODES = new Set(['probe-only', 'counter', 'full']);
+const BARTER_MODE_RAW = String(process.env.BARTER_MODE || 'probe-only').toLowerCase();
+const BARTER_MODE = VALID_BARTER_MODES.has(BARTER_MODE_RAW) ? BARTER_MODE_RAW : 'probe-only';
 
 openDb();
 
@@ -134,6 +146,9 @@ app.post('/v1/barter/probe', async (req, res) => {
 });
 
 app.post('/v1/barter/counter', async (req, res) => {
+  if (BARTER_MODE === 'probe-only') {
+    return res.status(403).json({ error: 'mode_blocks_counter', barter_mode: BARTER_MODE });
+  }
   const { target_url, asking_seen_usd, pay_to } = req.body || {};
   if (!target_url || !asking_seen_usd || !pay_to) {
     return res.status(400).json({ error: 'target_url, asking_seen_usd, pay_to required' });
@@ -154,6 +169,9 @@ app.post('/v1/barter/counter', async (req, res) => {
 });
 
 app.post('/v1/barter/settle', async (req, res) => {
+  if (BARTER_MODE === 'probe-only') {
+    return res.status(403).json({ error: 'mode_blocks_settle', barter_mode: BARTER_MODE });
+  }
   const { target_url, counter_id, tx_hash, signed_tx, paid_usd, asking_seen_usd, category, units } = req.body || {};
   if (!target_url) return res.status(400).json({ error: 'target_url required' });
   let hash = tx_hash;
@@ -175,6 +193,7 @@ app.get('/v1/barter/ledger', (req, res) => {
     book: todayBook(),
     today_spent_usd: todaySpentUsd(),
     caps: CAPS,
+    barter_mode: BARTER_MODE,
     recent_targets: recentTargets(20),
   });
 });
@@ -186,7 +205,15 @@ app.get('/v1/barter/today', (req, res) => {
     free: true,
     wallet: WALLET_ADDRESS,
     enable_outbound: ENABLE_OUTBOUND,
+    barter_mode: BARTER_MODE,
     ...b,
+  });
+});
+
+app.get('/v1/barter/capabilities', (req, res) => {
+  res.json({
+    capabilities: aggregatedCapabilities(),
+    barter_mode: BARTER_MODE,
   });
 });
 
@@ -195,6 +222,7 @@ app.get('/health', (req, res) => res.json({
   service: 'hive-mcp-barter',
   version: '1.0.0',
   enable_outbound: ENABLE_OUTBOUND,
+  barter_mode: BARTER_MODE,
   wallet: WALLET_ADDRESS,
   caps: CAPS,
 }));
@@ -274,6 +302,7 @@ const HTML_ROOT = `<!DOCTYPE html>
   <tr><td>POST</td><td><code>/v1/barter/settle</code></td><td>Resolve an accepted counter on-chain and book the spread.</td></tr>
   <tr><td>GET</td><td><code>/v1/barter/ledger</code></td><td>Running P&amp;L, attempts, wins, spread.</td></tr>
   <tr><td>GET</td><td><code>/v1/barter/today</code></td><td>Today aggregate (Tier 0, free).</td></tr>
+  <tr><td>GET</td><td><code>/v1/barter/capabilities</code></td><td>Aggregated discovered capabilities (price discovery output).</td></tr>
   <tr><td>GET</td><td><code>/health</code></td><td>Service health.</td></tr>
 </table>
 
@@ -304,6 +333,7 @@ app.get('/', (req, res) => {
       protocol: '2024-11-05',
       tools: TOOLS.map(t => ({ name: t.name, description: t.description })),
       enable_outbound: ENABLE_OUTBOUND,
+      barter_mode: BARTER_MODE,
       caps: CAPS,
       resale_table: RESALE_TABLE,
     });
@@ -311,7 +341,7 @@ app.get('/', (req, res) => {
   res.set('content-type', 'text/html; charset=utf-8').send(HTML_ROOT);
 });
 
-// ─── Outbound 5-min cron loop (gated behind ENABLE_OUTBOUND) ───────────────
+// ─── Outbound 5-min cron loop (gated behind ENABLE_OUTBOUND + BARTER_MODE) ──
 async function outboundTick() {
   if (!ENABLE_OUTBOUND) return;
   try {
@@ -327,6 +357,10 @@ async function outboundTick() {
       const r = await probe(t.target_url);
       hourlyDistinct += 1;
 
+      // probe-only mode: discovery loop runs and probes are sent, but we
+      // never construct or record a counter envelope.
+      if (BARTER_MODE === 'probe-only') continue;
+
       if (!r.ok || !r.asking_usd || !r.pay_to) {
         if (r.response_code == null) blacklistTarget(t.target_url, 'no_response', 24);
         continue;
@@ -336,6 +370,11 @@ async function outboundTick() {
       if (!cat) continue;
       const resale = resaleValueFor(cat, 1);
       if (!resale) continue;
+
+      // Margin gate fires only on verified-resale categories. Unverified
+      // categories are recorded by the probe but never countered — we do
+      // not know the real resale yet.
+      if (!isVerified(cat)) continue;
 
       const offer_usd = Number((r.asking_usd * CAPS.COUNTER_PCT).toFixed(6));
       if (offer_usd > resale * CAPS.RESALE_MARGIN) continue;
@@ -358,9 +397,10 @@ async function outboundTick() {
         target_response: null,
         accepted: false,
       });
-      // Posting the counter to the target is left to the target's own
-      // accept rail — we never re-broadcast. The 5-min loop only writes
-      // the envelope to the ledger; manual settle endpoint closes it.
+      // In `counter` mode we stop here — settlement requires a manual call
+      // to /v1/barter/settle. In `full` mode the original behavior of
+      // accepting on the target's own rail still applies; we never
+      // re-broadcast from this loop.
     }
   } catch (err) {
     console.error('outboundTick error:', err?.message || err);
@@ -380,7 +420,7 @@ async function revalueResale() {
       headers: { 'content-type': 'application/json', 'user-agent': 'hive-mcp-barter/1.0' },
       body: JSON.stringify({
         model: 'hive-default',
-        messages: [{ role: 'user', content: 'Reprice resale table for hive-mcp-barter. Return JSON with llm_token, oracle_read, storage_write, kyc_check unit prices.' }],
+        messages: [{ role: 'user', content: 'Reprice resale table for hive-mcp-barter. Return JSON with llm_tokens, oracle_reads, storage_writes, kyc_checks unit prices.' }],
         max_tokens: 256,
       }),
       signal: AbortSignal.timeout(20000),
@@ -394,6 +434,7 @@ setInterval(revalueResale, 12 * 60 * 60 * 1000);
 app.listen(PORT, () => {
   console.log(`hive-mcp-barter on :${PORT}`);
   console.log(`  enable_outbound : ${ENABLE_OUTBOUND}`);
+  console.log(`  barter_mode     : ${BARTER_MODE}`);
   console.log(`  wallet          : ${WALLET_ADDRESS}`);
   console.log(`  registries      : ${listRegistries().join(', ')}`);
 });
