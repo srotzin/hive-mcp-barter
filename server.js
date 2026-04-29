@@ -391,6 +391,80 @@ async function revalueResale() {
 }
 setInterval(revalueResale, 12 * 60 * 60 * 1000);
 
+
+// ─── Schema discoverability ────────────────────────────────────────────────
+const AGENT_CARD = {
+  name: SERVICE,
+  description: 'Outbound 402 arbitrage agent. Probes 402-enabled MCP endpoints, counter-offers below asking, settles when the spread clears our resale floor. MCP 2024-11-05, USDC on Base, single-shot no-haggle policy. New agents: first call free. Loyalty: every 6th paid call is free. Pay in USDC on Base L2.',
+  url: `https://${SERVICE}.onrender.com`,
+  provider: {
+    organization: 'Hive Civilization',
+    url: 'https://www.thehiveryiq.com',
+    contact: 'steve@thehiveryiq.com',
+  },
+  version: VERSION,
+  capabilities: {
+    streaming: false,
+    pushNotifications: false,
+    stateTransitionHistory: false,
+  },
+  authentication: {
+    schemes: ['x402'],
+    credentials: {
+      type: 'x402',
+      asset: 'USDC',
+      network: 'base',
+      asset_address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      recipient: '0x15184bf50b3d3f52b60434f8942b7d52f2eb436e',
+    },
+  },
+  defaultInputModes: ['application/json'],
+  defaultOutputModes: ['application/json'],
+  skills: [
+    { name: 'barter_discover', description: 'List 402-enabled MCP endpoints from a public registry (glama, smithery, mcp.so) with last-seen asking prices. Tier 0, free, read-only.' },
+    { name: 'barter_quote_curve', description: 'Build a demand curve for a target by sending up to 5 probes at descending floor pcts. Returns the reservation-price estimate. Tier 0, free, read-only.' },
+    { name: 'barter_arbitrage_book', description: 'Get today\' },
+  ],
+  extensions: {
+    hive_pricing: {
+      currency: 'USDC',
+      network: 'base',
+      model: 'per_call',
+      first_call_free: true,
+      loyalty_threshold: 6,
+      loyalty_message: 'Every 6th paid call is free',
+    },
+  },
+};
+
+const AP2 = {
+  ap2_version: '1',
+  agent: {
+    name: SERVICE,
+    did: `did:web:${SERVICE}.onrender.com`,
+    description: 'Outbound 402 arbitrage agent. Probes 402-enabled MCP endpoints, counter-offers below asking, settles when the spread clears our resale floor. MCP 2024-11-05, USDC on Base, single-shot no-haggle policy. New agents: first call free. Loyalty: every 6th paid call is free. Pay in USDC on Base L2.',
+  },
+  endpoints: {
+    mcp: `https://${SERVICE}.onrender.com/mcp`,
+    agent_card: `https://${SERVICE}.onrender.com/.well-known/agent-card.json`,
+  },
+  payments: {
+    schemes: ['x402'],
+    primary: {
+      scheme: 'x402',
+      network: 'base',
+      asset: 'USDC',
+      asset_address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      recipient: '0x15184bf50b3d3f52b60434f8942b7d52f2eb436e',
+    },
+  },
+  brand: { color: '#C08D23', name: 'Hive Civilization' },
+};
+
+app.get('/.well-known/agent-card.json', (req, res) => res.json(AGENT_CARD));
+app.get('/.well-known/ap2.json',         (req, res) => res.json(AP2));
+
+
 app.listen(PORT, () => {
   console.log(`hive-mcp-barter on :${PORT}`);
   console.log(`  enable_outbound : ${ENABLE_OUTBOUND}`);
