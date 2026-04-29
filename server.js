@@ -395,7 +395,7 @@ setInterval(revalueResale, 12 * 60 * 60 * 1000);
 // ─── Schema discoverability ────────────────────────────────────────────────
 const AGENT_CARD = {
   name: SERVICE,
-  description: `Outbound 402 arbitrage agent. Probes 402-enabled MCP endpoints, counter-offers below asking, settles when the spread clears our resale floor. MCP 2024-11-05, USDC on Base.. New agents: first call free. Loyalty: every 6th paid call is free. Pay in USDC on Base L2.`,
+  description: 'Outbound 402 arbitrage agent. Probes 402-enabled MCP endpoints, counter-offers below asking, settles when the spread clears our resale floor. MCP 2024-11-05, USDC on Base, single-shot no-haggle policy.. New agents: first call free. Loyalty: every 6th paid call is free. Pay in USDC on Base L2.',
   url: `https://${SERVICE}.onrender.com`,
   provider: {
     organization: 'Hive Civilization',
@@ -420,7 +420,11 @@ const AGENT_CARD = {
   },
   defaultInputModes: ['application/json'],
   defaultOutputModes: ['application/json'],
-  skills: TOOLS.map(t => ({ name: t.name, description: t.description })),
+  skills: [
+    { name: 'barter_discover', description: 'List 402-enabled MCP endpoints from a public registry (glama, smithery, mcp.so) with last-seen asking prices. Tier 0, free, read-only.' },
+    { name: 'barter_quote_curve', description: 'Build a demand curve for a target by sending up to 5 probes at descending floor pcts. Returns the reservation-price estimate. Tier 0, free, read-only.' },
+    { name: 'barter_arbitrage_book', description: 'Get today\' },
+  ],
   extensions: {
     hive_pricing: {
       currency: 'USDC',
@@ -438,7 +442,7 @@ const AP2 = {
   agent: {
     name: SERVICE,
     did: `did:web:${SERVICE}.onrender.com`,
-    description: `Outbound 402 arbitrage agent. Probes 402-enabled MCP endpoints, counter-offers below asking, settles when the spread clears our resale floor. MCP 2024-11-05, USDC on Base.. New agents: first call free. Loyalty: every 6th paid call is free. Pay in USDC on Base L2.`,
+    description: 'Outbound 402 arbitrage agent. Probes 402-enabled MCP endpoints, counter-offers below asking, settles when the spread clears our resale floor. MCP 2024-11-05, USDC on Base, single-shot no-haggle policy.. New agents: first call free. Loyalty: every 6th paid call is free. Pay in USDC on Base L2.',
   },
   endpoints: {
     mcp: `https://${SERVICE}.onrender.com/mcp`,
@@ -458,7 +462,7 @@ const AP2 = {
 };
 
 app.get('/.well-known/agent-card.json', (req, res) => res.json(AGENT_CARD));
-app.get('/.well-known/ap2.json', (req, res) => res.json(AP2));
+app.get('/.well-known/ap2.json',         (req, res) => res.json(AP2));
 
 
 app.listen(PORT, () => {
