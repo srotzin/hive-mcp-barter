@@ -518,6 +518,11 @@ async function revalueResale() {
 setInterval(revalueResale, 12 * 60 * 60 * 1000);
 
 
+// ─── Schema constants (auto-injected to fix deploy) ─────
+const SERVICE = 'hive-mcp-barter';
+const VERSION = '1.0.0';
+
+
 // ─── Schema discoverability ────────────────────────────────────────────────
 const AGENT_CARD = {
   name: SERVICE,
@@ -549,7 +554,7 @@ const AGENT_CARD = {
   skills: [
     { name: 'barter_discover', description: 'List 402-enabled MCP endpoints from a public registry (glama, smithery, mcp.so) with last-seen asking prices. Tier 0, free, read-only.' },
     { name: 'barter_quote_curve', description: 'Build a demand curve for a target by sending up to 5 probes at descending floor pcts. Returns the reservation-price estimate. Tier 0, free, read-only.' },
-    { name: 'barter_arbitrage_book', description: 'Get today\' },
+    { name: 'barter_arbitrage_book', description: 'Get the running probe book of accepted/rejected counters with realized spread.' },
   ],
   extensions: {
     hive_pricing: {
