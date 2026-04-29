@@ -526,7 +526,7 @@ const VERSION = '1.0.0';
 // ─── Schema discoverability ────────────────────────────────────────────────
 const AGENT_CARD = {
   name: SERVICE,
-  description: 'Outbound 402 arbitrage agent. Probes 402-enabled MCP endpoints, counter-offers below asking, settles when the spread clears our resale floor. MCP 2024-11-05, USDC on Base, single-shot no-haggle policy. New agents: first call free. Loyalty: every 6th paid call is free. Pay in USDC on Base L2.',
+  description: 'Outbound 402 arbitrage agent. Probes 402-enabled MCP endpoints, counter-offers below asking, settles when the spread clears our resale floor. MCP 2024-11-05, USDC on Base, single-shot no-haggle policy. INTENTIONALLY-FREE: This service is an outbound buyer; revenue is captured by spread on resold endpoints, not direct charge. All public MCP tools (barter_discover, barter_quote_curve, barter_arbitrage_book) are Tier 0, free, read-only. The /v1/barter/offer REST endpoint is x402-gated at $0.001 USDC.',
   url: `https://${SERVICE}.onrender.com`,
   provider: {
     organization: 'Hive Civilization',
@@ -573,7 +573,7 @@ const AP2 = {
   agent: {
     name: SERVICE,
     did: `did:web:${SERVICE}.onrender.com`,
-    description: 'Outbound 402 arbitrage agent. Probes 402-enabled MCP endpoints, counter-offers below asking, settles when the spread clears our resale floor. MCP 2024-11-05, USDC on Base, single-shot no-haggle policy. New agents: first call free. Loyalty: every 6th paid call is free. Pay in USDC on Base L2.',
+    description: 'Outbound 402 arbitrage agent. Probes 402-enabled MCP endpoints, counter-offers below asking, settles when the spread clears our resale floor. MCP 2024-11-05, USDC on Base, single-shot no-haggle policy. INTENTIONALLY-FREE: This service is an outbound buyer; revenue is captured by spread on resold endpoints, not direct charge.',
   },
   endpoints: {
     mcp: `https://${SERVICE}.onrender.com/mcp`,
