@@ -1,5 +1,7 @@
 # hive-mcp-barter
 
+[![srotzin/hive-mcp-barter MCP server](https://glama.ai/mcp/servers/srotzin/hive-mcp-barter/badges/score.svg)](https://glama.ai/mcp/servers/srotzin/hive-mcp-barter)
+
 **Outbound 402 arbitrage agent — Hive Civilization**
 
 Probes 402-enabled MCP endpoints, counter-offers below asking, and settles when the spread clears our resale floor. Pure protocol — no DMs, no spam. Attribution headers on every request.
