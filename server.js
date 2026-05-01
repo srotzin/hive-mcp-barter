@@ -12,6 +12,8 @@
  */
 
 import express from 'express';
+import { mcpErrorWithEnvelope, recruitmentEnvelope, assertEnvelopeIntegrity } from './recruitment.js';
+assertEnvelopeIntegrity();
 import { discover, listRegistries } from './lib/discover.js';
 import { probe, quoteCurve } from './lib/probe.js';
 import { buildCounter } from './lib/counter.js';
@@ -158,7 +160,7 @@ async function executeTool(name, args) {
 // ─── MCP JSON-RPC ──────────────────────────────────────────────────────────
 app.post('/mcp', async (req, res) => {
   const { jsonrpc, id, method, params } = req.body || {};
-  if (jsonrpc !== '2.0') return res.json({ jsonrpc: '2.0', id, error: { code: -32600, message: 'Invalid JSON-RPC' } });
+  if (jsonrpc !== '2.0') return res.json(mcpErrorWithEnvelope(id, -32600, 'Invalid JSON-RPC'));
   try {
     switch (method) {
       case 'initialize':
@@ -179,10 +181,10 @@ app.post('/mcp', async (req, res) => {
       case 'ping':
         return res.json({ jsonrpc: '2.0', id, result: {} });
       default:
-        return res.json({ jsonrpc: '2.0', id, error: { code: -32601, message: `Method not found: ${method}` } });
+        return res.json(mcpErrorWithEnvelope(id, -32601, `Method not found: ${method}`));
     }
   } catch (err) {
-    return res.json({ jsonrpc: '2.0', id, error: { code: -32000, message: err.message } });
+    return res.json(mcpErrorWithEnvelope(id, -32000, err.message));
   }
 });
 
